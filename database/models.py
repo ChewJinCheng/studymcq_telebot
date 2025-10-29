@@ -18,12 +18,24 @@ class Database:
         c = conn.cursor()
         
         # Users table
+        # Create base table if it doesn't exist
         c.execute('''CREATE TABLE IF NOT EXISTS users
                      (user_id INTEGER PRIMARY KEY,
                       username TEXT,
                       daily_questions INTEGER DEFAULT 5,
                       quiz_time TEXT DEFAULT '09:00',
                       timezone TEXT DEFAULT 'UTC')''')
+        
+        # Add new columns if they don't exist
+        # SQLite doesn't support ADD COLUMN IF NOT EXISTS, so we need to check
+        c.execute("PRAGMA table_info(users)")
+        columns = [column[1] for column in c.fetchall()]
+        
+        if 'min_questions_per_chunk' not in columns:
+            c.execute('ALTER TABLE users ADD COLUMN min_questions_per_chunk INTEGER DEFAULT 3')
+        
+        if 'max_questions_per_chunk' not in columns:
+            c.execute('ALTER TABLE users ADD COLUMN max_questions_per_chunk INTEGER DEFAULT 5')
         
         # Knowledge base table (stores raw content)
         c.execute('''CREATE TABLE IF NOT EXISTS knowledge_base

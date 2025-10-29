@@ -12,10 +12,9 @@ GROQ_API_KEY: Final = os.getenv("GROQ_API_KEY")
 DB_NAME: Final = 'mcq_bot.db'
 
 # MCQ Generation Settings
-DEFAULT_QUESTIONS_PER_CHUNK: Final = 3
-MAX_QUESTIONS_PER_CHUNK: Final = 5
-CHUNK_SIZE_WORDS: Final = 1000
-CONTENT_WORDS_PER_QUESTION: Final = 200
+DEFAULT_QUESTIONS_PER_CHUNK: Final = 3  # Default minimum questions per chunk
+MAX_QUESTIONS_PER_CHUNK: Final = 5      # Default maximum questions per chunk
+CHUNK_SIZE_WORDS: Final = 1000          # Fixed size of content chunks for processing
 
 # User Settings Defaults
 DEFAULT_DAILY_QUESTIONS: Final = 5

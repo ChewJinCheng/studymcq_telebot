@@ -55,10 +55,32 @@ Ready to quiz! Use /quiz to practice. 🎯"""
     # Settings
     CURRENT_SETTINGS = """⚙️ *Current Settings*
 
-Daily Questions: {daily_questions}
-Quiz Time: {quiz_time} (24-hour format)
+Daily Quiz Settings:
+• Questions per quiz: {daily_questions}
+• Quiz Time: {quiz_time} (24-hour format)
+
+Question Generation Settings:
+• Min questions per chunk: {min_questions}
+• Max questions per chunk: {max_questions}
 
 Select an option to update:"""
+
+    SET_MIN_QUESTIONS_PROMPT = """Enter minimum number of questions to generate per content chunk.
+
+Note: While you can set any positive number, we recommend not exceeding 10 questions for better learning experience."""
+
+    SET_MAX_QUESTIONS_PROMPT = """Now enter maximum number of questions (must be greater than {min_q}).
+
+This sets the range of questions that can be generated for each chunk of content."""
+    
+    INVALID_MIN_QUESTIONS = "Please enter a positive number greater than 0"
+    INVALID_MAX_QUESTIONS = "Maximum questions must be greater than minimum questions ({min_q})"
+    
+    QUESTIONS_PER_CHUNK_SET = """✅ Question generation settings updated:
+• Minimum: {min_q} questions
+• Maximum: {max_q} questions
+
+The bot will generate {min_q}-{max_q} questions per chunk of content, depending on the content complexity."""
 
     # Quiz
     EMPTY_BANK_ERROR = "❌ Your question bank is empty! Please upload documents or send text first."
@@ -176,12 +198,19 @@ Always respond with valid JSON only, no additional text.
 Keep questions and explanations simple and avoid using special characters, HTML, or Markdown formatting."""
     
     @staticmethod
-    def get_generation_prompt(content: str, num_questions: int, max_length: int = 6000) -> str:
-        return f"""Based on the following content, generate {num_questions} high-quality multiple-choice questions. 
+    def get_generation_prompt(content: str, min_questions: int, max_questions: int, max_length: int = 6000) -> str:
+        return f"""Based on the following content, generate between {min_questions} and {max_questions} high-quality multiple-choice questions.
+Choose the number of questions based on:
+- Content complexity and depth
+- Important concepts and key points
+- Natural breaks in the content
+- Meaningful testable information
+
 Each question should:
 - Test deep understanding, not just memorization
 - Have 4 options (A, B, C, D) with one correct answer
 - Include a detailed explanation that quotes specific parts from the content
+- Cover different aspects of the content (avoid redundant questions)
 
 Content:
 {content[:max_length]}

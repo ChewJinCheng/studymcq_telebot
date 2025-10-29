@@ -46,6 +46,12 @@ class CallbackHandlers:
         elif data == 'set_time':
             await query.message.reply_text(BotMessages.SET_TIME_PROMPT)
             context.user_data['awaiting'] = 'time'
+            
+        elif data == 'set_questions_per_chunk':
+            await query.message.reply_text(BotMessages.SET_MIN_QUESTIONS_PROMPT)
+            context.user_data['awaiting'] = 'min_questions'
+            # Clear any previous temporary settings
+            context.user_data.pop('temp_min_questions', None)
         
         elif data == 'confirm_clear_knowledge':
             user_id = update.effective_user.id

@@ -122,6 +122,14 @@ class MessageHandlers:
         if awaiting == 'time':
             await self.handle_time_input(update, context, text, user_id)
             return
+            
+        if awaiting == 'min_questions':
+            await self.handle_min_questions_input(update, context, text, user_id)
+            return
+            
+        if awaiting == 'max_questions':
+            await self.handle_max_questions_input(update, context, text, user_id)
+            return
         
         # Check if user is in upload mode
         if not context.user_data.get('upload_mode'):
@@ -212,6 +220,58 @@ class MessageHandlers:
             context.user_data.pop('awaiting', None)
         else:
             await update.message.reply_text(BotMessages.INVALID_TIME_FORMAT)
+            
+    async def handle_min_questions_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE,
+                                       text: str, user_id: int):
+        """Handle minimum questions per chunk input"""
+        try:
+            num = int(text)
+            if num > 0:  # Only check if positive
+                # Store minimum temporarily
+                context.user_data['temp_min_questions'] = num
+                # Ask for maximum
+                await update.message.reply_text(
+                    BotMessages.SET_MAX_QUESTIONS_PROMPT.format(min_q=num)
+                )
+                context.user_data['awaiting'] = 'max_questions'
+            else:
+                await update.message.reply_text(BotMessages.INVALID_MIN_QUESTIONS)
+        except ValueError:
+            await update.message.reply_text(BotMessages.INVALID_NUMBER_FORMAT)
+            
+    async def handle_max_questions_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE,
+                                       text: str, user_id: int):
+        """Handle maximum questions per chunk input"""
+        try:
+            num = int(text)
+            min_q = context.user_data.get('temp_min_questions')
+            
+            if not min_q:
+                # Something went wrong, start over
+                await update.message.reply_text(BotMessages.SET_MIN_QUESTIONS_PROMPT)
+                context.user_data['awaiting'] = 'min_questions'
+                return
+            
+            if num > min_q:  # Only check if greater than minimum
+                # Save both settings
+                self.db.save_user_settings(
+                    user_id,
+                    update.effective_user.username,
+                    min_questions=min_q,
+                    max_questions=num
+                )
+                await update.message.reply_text(
+                    BotMessages.QUESTIONS_PER_CHUNK_SET.format(min_q=min_q, max_q=num)
+                )
+                # Clear temporary data and awaiting state
+                context.user_data.pop('awaiting', None)
+                context.user_data.pop('temp_min_questions', None)
+            else:
+                await update.message.reply_text(
+                    BotMessages.INVALID_MAX_QUESTIONS.format(min_q=min_q)
+                )
+        except ValueError:
+            await update.message.reply_text(BotMessages.INVALID_NUMBER_FORMAT)
     
     async def process_and_generate_questions(self, user_id: int, content: str, 
                                             source: str, update: Update, 
@@ -228,17 +288,17 @@ class MessageHandlers:
         total_questions = 0
         
         for chunk_name, chunk_content in chunks:
-            # Generate 3-5 questions per chunk
-            num_q = min(
-                config.MAX_QUESTIONS_PER_CHUNK, 
-                max(
-                    config.DEFAULT_QUESTIONS_PER_CHUNK, 
-                    len(chunk_content.split()) // config.CONTENT_WORDS_PER_QUESTION
-                )
+            # Get user's question generation settings
+            settings = self.db.get_user_settings(user_id)
+            min_q = settings['min_questions_per_chunk']
+            max_q = settings['max_questions_per_chunk']
+            
+            # Let the LLM decide how many questions to generate within the min-max range
+            mcqs = self.mcq_generator.generate_mcqs_from_chunk(
+                chunk_content, 
+                min_questions=min_q,
+                max_questions=max_q
             )
-            
-            
-            mcqs = self.mcq_generator.generate_mcqs_from_chunk(chunk_content, num_q)
             
             # Save each question to database
             for mcq in mcqs:

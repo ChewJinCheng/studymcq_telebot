@@ -17,20 +17,49 @@ class DatabaseQueries:
         """Get user settings"""
         conn = self._get_connection()
         c = conn.cursor()
-        c.execute('SELECT daily_questions, quiz_time FROM users WHERE user_id = ?', (user_id,))
-        result = c.fetchone()
-        conn.close()
         
-        if result:
-            return {'daily_questions': result[0], 'quiz_time': result[1]}
+        try:
+            c.execute('''SELECT daily_questions, quiz_time, 
+                        min_questions_per_chunk, max_questions_per_chunk 
+                        FROM users WHERE user_id = ?''', (user_id,))
+            result = c.fetchone()
+            
+            if result:
+                return {
+                    'daily_questions': result[0],
+                    'quiz_time': result[1],
+                    'min_questions_per_chunk': result[2] if result[2] is not None else config.DEFAULT_QUESTIONS_PER_CHUNK,
+                    'max_questions_per_chunk': result[3] if result[3] is not None else config.MAX_QUESTIONS_PER_CHUNK
+                }
+        except sqlite3.OperationalError:
+            # If columns don't exist yet, get basic settings
+            c.execute('SELECT daily_questions, quiz_time FROM users WHERE user_id = ?', (user_id,))
+            result = c.fetchone()
+            
+            if result:
+                return {
+                    'daily_questions': result[0],
+                    'quiz_time': result[1],
+                    'min_questions_per_chunk': config.DEFAULT_QUESTIONS_PER_CHUNK,
+                    'max_questions_per_chunk': config.MAX_QUESTIONS_PER_CHUNK
+                }
+        
+        finally:
+            conn.close()
+        
+        # Default values for new users
         return {
             'daily_questions': config.DEFAULT_DAILY_QUESTIONS,
-            'quiz_time': config.DEFAULT_QUIZ_TIME
+            'quiz_time': config.DEFAULT_QUIZ_TIME,
+            'min_questions_per_chunk': config.DEFAULT_QUESTIONS_PER_CHUNK,
+            'max_questions_per_chunk': config.MAX_QUESTIONS_PER_CHUNK
         }
     
     def save_user_settings(self, user_id: int, username: str, 
                           daily_questions: Optional[int] = None, 
-                          quiz_time: Optional[str] = None):
+                          quiz_time: Optional[str] = None,
+                          min_questions: Optional[int] = None,
+                          max_questions: Optional[int] = None):
         """Save or update user settings"""
         conn = self._get_connection()
         c = conn.cursor()
@@ -44,6 +73,12 @@ class DatabaseQueries:
         if quiz_time is not None:
             c.execute('UPDATE users SET quiz_time = ? WHERE user_id = ?', 
                       (quiz_time, user_id))
+        if min_questions is not None:
+            c.execute('UPDATE users SET min_questions_per_chunk = ? WHERE user_id = ?',
+                      (min_questions, user_id))
+        if max_questions is not None:
+            c.execute('UPDATE users SET max_questions_per_chunk = ? WHERE user_id = ?',
+                      (max_questions, user_id))
         
         conn.commit()
         conn.close()

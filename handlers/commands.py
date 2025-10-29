@@ -64,13 +64,16 @@ class CommandHandlers:
         keyboard = [
             [InlineKeyboardButton("Set Daily Questions", callback_data='set_questions')],
             [InlineKeyboardButton("Set Quiz Time", callback_data='set_time')],
+            [InlineKeyboardButton("Set Questions per Chunk", callback_data='set_questions_per_chunk')],
             [InlineKeyboardButton("Close", callback_data='close')]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         settings_text = BotMessages.CURRENT_SETTINGS.format(
             daily_questions=settings['daily_questions'],
-            quiz_time=settings['quiz_time']
+            quiz_time=settings['quiz_time'],
+            min_questions=settings['min_questions_per_chunk'],
+            max_questions=settings['max_questions_per_chunk']
         )
         
         await update.message.reply_text(

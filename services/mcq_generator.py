@@ -24,7 +24,7 @@ class MCQGenerator:
     def __init__(self, api_key: str):
         self.client = Groq(api_key=api_key)
     
-    def generate_mcqs_from_chunk(self, content: str, num_questions: int = 3) -> list:
+    def generate_mcqs_from_chunk(self, content: str, min_questions: int = 3, max_questions: int = 5) -> list:
         """Generate MCQs from a content chunk"""
         
         from messages import MCQPrompts
@@ -34,7 +34,9 @@ class MCQGenerator:
                 model=config.GROQ_MODEL,
                 messages=[
                     {"role": "system", "content": MCQPrompts.SYSTEM_PROMPT},
-                    {"role": "user", "content": MCQPrompts.get_generation_prompt(content, num_questions)}
+                    {"role": "user", "content": MCQPrompts.get_generation_prompt(
+                        content, min_questions, max_questions
+                    )}
                 ],
                 temperature=config.GROQ_TEMPERATURE,
                 max_tokens=config.GROQ_MAX_TOKENS
