@@ -1,0 +1,17 @@
+# Environment and virtual environment
+.env/
+venv/
+
+# Local database and image files
+mcq_bot.db
+profilepic.png
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# IDE / editor files
+.vscode/
+.idea/

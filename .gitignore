@@ -1,0 +1,22 @@
+# Python virtual environment
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Environment variables
+.env
+
+# Database
+mcq_bot.db
+
+# Bot assets (optional, if you don't want to commit images)
+profilepic.png
+
+# Logs
+*.log
+
+# OS-specific files
+.DS_Store
+Thumbs.db
