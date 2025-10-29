@@ -167,18 +167,23 @@ class CommandHandlers:
         quiz = context.user_data.get('current_quiz', [])
         question_num = context.user_data.get('current_question', 0)
         
-        # Create inline keyboard with options
-        keyboard = []
-        for option in mcq['options']:
-            callback_data = f"answer_{option[0]}"  # Get A, B, C, or D
-            keyboard.append([InlineKeyboardButton(option, callback_data=callback_data)])
-        
+        # Create inline keyboard with simple A, B, C, D buttons
+        keyboard = [
+            [
+                InlineKeyboardButton("A", callback_data="answer_A"),
+                InlineKeyboardButton("B", callback_data="answer_B"),
+                InlineKeyboardButton("C", callback_data="answer_C"),
+                InlineKeyboardButton("D", callback_data="answer_D")
+            ]
+        ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        # Build plain text message (no HTML/Markdown to avoid parsing issues)
+        # Build text message with options listed above the buttons
+        options_text = "\n".join(mcq['options'])
         question_text = (
             f"📝 Question {question_num + 1}/{len(quiz)}\n\n"
             f"{str(mcq['question'])}\n\n"
+            f"Options:\n{options_text}\n\n"
             f"Source: {str(mcq['source'])}"
         )
         
