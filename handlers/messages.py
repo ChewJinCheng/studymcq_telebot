@@ -1,4 +1,4 @@
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from database.queries import DatabaseQueries
 from services.document_processor import DocumentProcessor
@@ -15,19 +15,25 @@ class MessageHandlers:
     """Handle text and document messages"""
     
     def __init__(self, db_queries: DatabaseQueries, 
-                 document_processor: DocumentProcessor,
-                 mcq_generator: MCQGenerator,
-                 quiz_manager: QuizManager,
-                 command_handlers=None):
+                document_processor: DocumentProcessor,
+                mcq_generator: MCQGenerator,
+                quiz_manager: QuizManager,
+                command_handlers=None,
+                callback_handlers=None):
         self.db = db_queries
         self.doc_processor = document_processor
         self.mcq_generator = mcq_generator
         self.quiz_manager = quiz_manager
         self.command_handlers = command_handlers
-    
+        self.callback_handlers = callback_handlers
+
     def set_command_handlers(self, command_handlers):
         """Set command handlers reference (to avoid circular dependency)"""
         self.command_handlers = command_handlers
+
+    def set_callback_handlers(self, callback_handlers):
+        """Set callback handlers reference (to avoid circular dependency)"""
+        self.callback_handlers = callback_handlers
     
     async def handle_document(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle document uploads"""
@@ -130,6 +136,12 @@ class MessageHandlers:
         if awaiting == 'max_questions':
             await self.handle_max_questions_input(update, context, text, user_id)
             return
+            
+        # Check if we're awaiting question edits
+        awaiting_edit = context.user_data.get('awaiting_edit')
+        if awaiting_edit:
+            await self.handle_question_edit_input(update, context, text, awaiting_edit)
+            return
         
         # Check if user is in upload mode
         if not context.user_data.get('upload_mode'):
@@ -227,7 +239,7 @@ class MessageHandlers:
         try:
             num = int(text)
             if num > 0:  # Only check if positive
-                # Store minimum temporarily
+                # Store minimum temporarily in user_data
                 context.user_data['temp_min_questions'] = num
                 # Ask for maximum
                 await update.message.reply_text(
@@ -244,7 +256,7 @@ class MessageHandlers:
         """Handle maximum questions per chunk input"""
         try:
             num = int(text)
-            min_q = context.user_data.get('temp_min_questions')
+            min_q = context.user_data.get('temp_min_questions')  # Get the temp min value
             
             if not min_q:
                 # Something went wrong, start over
@@ -252,12 +264,12 @@ class MessageHandlers:
                 context.user_data['awaiting'] = 'min_questions'
                 return
             
-            if num > min_q:  # Only check if greater than minimum
-                # Save both settings
+            if num >= min_q:
+                # Save both min and max together
                 self.db.save_user_settings(
                     user_id,
                     update.effective_user.username,
-                    min_questions=min_q,
+                    min_questions=min_q,  # Save the temp min value
                     max_questions=num
                 )
                 await update.message.reply_text(
@@ -272,6 +284,128 @@ class MessageHandlers:
                 )
         except ValueError:
             await update.message.reply_text(BotMessages.INVALID_NUMBER_FORMAT)
+            
+    async def handle_question_edit_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE,
+                                       text: str, edit_type: str):
+        """Handle input for question editing"""
+        mcq = context.user_data.get('editing_question')
+        if not mcq:
+            await update.message.reply_text("Edit session expired. Please try again.")
+            return
+            
+        if edit_type == 'question':
+            mcq['new_question'] = text
+            # Move to options edit
+            keyboard = [
+                [
+                    InlineKeyboardButton("Yes", callback_data='edit_options_yes'),
+                    InlineKeyboardButton("No", callback_data='edit_options_no')
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            options_text = "\n".join(mcq['options'])
+            await update.message.reply_text(
+                BotMessages.EDIT_OPTIONS_START.format(options=options_text),
+                reply_markup=reply_markup
+            )
+            
+        elif edit_type == 'options':
+            # Validate options format
+            lines = text.strip().split('\n')
+            if len(lines) != 4:
+                await update.message.reply_text(BotMessages.INVALID_OPTIONS_FORMAT)
+                return
+            
+            cleaned_options = []
+            expected_labels = ['A', 'B', 'C', 'D']
+            found_labels = []
+
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    await update.message.reply_text(BotMessages.INVALID_OPTIONS_FORMAT)
+                    return
+                
+                # Find A, B, C, or D (case-insensitive) in the line
+                label_found = None
+                label_pos = -1
+                
+                for label in expected_labels:
+                    # Search for the label (case-insensitive)
+                    pos = line.upper().find(label)
+                    if pos != -1:
+                        label_found = label
+                        label_pos = pos
+                        break
+                
+                if not label_found:
+                    await update.message.reply_text(BotMessages.INVALID_OPTIONS_FORMAT)
+                    return
+                
+                # Check for duplicate labels
+                if label_found in found_labels:
+                    await update.message.reply_text(BotMessages.INVALID_OPTIONS_FORMAT)
+                    return
+                
+                found_labels.append(label_found)
+                
+                # Extract the text after the label and any separator
+                # Start from position after the label
+                text_after_label = line[label_pos + 1:].strip()
+                
+                # Remove common separators at the start if present
+                if text_after_label and text_after_label[0] in (')', '-', '.', ':', ']', ','):
+                    text_after_label = text_after_label[1:].strip()
+                
+                if not text_after_label:
+                    await update.message.reply_text(BotMessages.INVALID_OPTIONS_FORMAT)
+                    return
+                
+                # Store in standardized A) format with the label
+                cleaned_options.append((label_found, f"{label_found}) {text_after_label}"))
+            
+            # Verify all labels A, B, C, D were found
+            if sorted(found_labels) != expected_labels:
+                await update.message.reply_text(BotMessages.INVALID_OPTIONS_FORMAT)
+                return
+            
+            # Sort options to ensure A, B, C, D order
+            cleaned_options.sort(key=lambda x: x[0])
+            cleaned_options = [opt[1] for opt in cleaned_options]
+            
+            mcq['new_options'] = cleaned_options
+            # Move to answer edit
+            keyboard = [
+                [
+                    InlineKeyboardButton("Yes", callback_data='edit_answer_yes'),
+                    InlineKeyboardButton("No", callback_data='edit_answer_no')
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.message.reply_text(
+                BotMessages.EDIT_ANSWER_START.format(current_answer=mcq['correct_answer']),
+                reply_markup=reply_markup
+            )
+            
+        elif edit_type == 'explanation':
+            mcq['new_explanation'] = text
+            # Complete the editing process
+            # The save logic lives in the callback handlers (edit flow). Call it
+            # via the callback_handlers reference so the same save path is used
+            # for both callback-driven and text-driven edits.
+            if self.callback_handlers:
+                await self.callback_handlers.save_question_edits(update, context, from_text=True)
+            else:
+                # Fallback: try quiz_manager (older code paths), but normally
+                # callback_handlers should be present.
+                try:
+                    await self.quiz_manager.save_question_edits(update, context)
+                except Exception:
+                    await update.message.reply_text("Failed to save edits: handler not available.")
+            
+        context.user_data.pop('awaiting_edit', None)
     
     async def process_and_generate_questions(self, user_id: int, content: str, 
                                             source: str, update: Update, 

@@ -78,6 +78,43 @@ python main.py
 
 ---
 
+## 🧪 How It Works
+
+StudyMCQ uses a smart pipeline to convert your study materials into multiple-choice questions:
+
+### 📄 Document Processing
+- When you upload a file (`PDF`, `DOCX`, or `TXT`), the bot extracts the raw text.
+- The text is split into chunks of approximately **1000 words** to ensure manageable context size for the LLM.
+
+### 🧠 MCQ Generation
+- Each chunk is sent to the LLM with a prompt to generate **between `[min_questions, max_questions]`** multiple-choice questions.
+- The number of questions is dynamically chosen based on content depth, complexity, and natural breaks.
+- All generated questions include:
+  - 4 options (A–D)
+  - One correct answer
+  - A detailed explanation quoting the source content
+
+### 🗃️ Storage & Efficiency
+- All questions are stored in your personal question bank.
+- The LLM is **only called once per upload**, minimizing token usage and cost.
+
+---
+
+## ⚙️ Usability Features
+
+### 1. 🔧 Customizable Verbosity
+- You can configure the `min_questions` and `max_questions` per chunk to control how many questions are generated.
+- A higher number may increase coverage but could reduce individual question quality — find your balance!
+
+### 2. ✏️ Editable Questions
+- If the LLM generates hallucinated or low-quality questions, you can manually:
+  - Edit the question text
+  - Modify options
+  - Correct the answer or explanation
+- This ensures your question bank remains accurate and trustworthy.
+
+---
+
 ## 📦 File Structure
 
 ```

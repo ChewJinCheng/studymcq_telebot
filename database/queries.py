@@ -232,4 +232,54 @@ class DatabaseQueries:
             'total': total or 0,
             'correct': correct or 0
         }
-
+    
+    def update_question(self, question_id: int, user_id: int, 
+                   question: str = None, options: List[str] = None,
+                   correct_answer: str = None, explanation: str = None) -> bool:
+        """Update a question in the question bank"""
+        conn = self._get_connection()
+        c = conn.cursor()
+        
+        # Verify the question belongs to the user
+        c.execute('SELECT id FROM question_bank WHERE id = ? AND user_id = ?', 
+                (question_id, user_id))
+        if not c.fetchone():
+            conn.close()
+            return False
+            
+        updates = []
+        params = []
+        
+        if question is not None:
+            updates.append('question = ?')
+            params.append(question)
+        if options is not None:
+            updates.append('options = ?')
+            params.append(json.dumps(options))
+        if correct_answer is not None:
+            updates.append('correct_answer = ?')
+            params.append(correct_answer)
+        if explanation is not None:
+            updates.append('explanation = ?')
+            params.append(explanation)
+            
+        if updates:
+            query = f'''UPDATE question_bank 
+                    SET {', '.join(updates)}
+                    WHERE id = ? AND user_id = ?'''
+            params.extend([question_id, user_id])
+            c.execute(query, params)
+            conn.commit()
+            
+            # Verify the update by reading it back
+            c.execute('''SELECT question, options, correct_answer, explanation 
+                        FROM question_bank WHERE id = ? AND user_id = ?''',
+                    (question_id, user_id))
+            result = c.fetchone()
+            if result:
+                print(f"✓ Question {question_id} updated successfully:")
+                print(f"  Question: {result[0][:50]}...")
+                print(f"  Answer: {result[2]}")
+            
+        conn.close()
+        return True

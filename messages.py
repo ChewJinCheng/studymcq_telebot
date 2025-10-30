@@ -69,12 +69,12 @@ Select an option to update:"""
 
 Note: While you can set any positive number, we recommend not exceeding 10 questions for better learning experience."""
 
-    SET_MAX_QUESTIONS_PROMPT = """Now enter maximum number of questions (must be greater than {min_q}).
+    SET_MAX_QUESTIONS_PROMPT = """Now enter maximum number of questions (must be greater than or equal to {min_q}).
 
 This sets the range of questions that can be generated for each chunk of content."""
     
     INVALID_MIN_QUESTIONS = "Please enter a positive number greater than 0"
-    INVALID_MAX_QUESTIONS = "Maximum questions must be greater than minimum questions ({min_q})"
+    INVALID_MAX_QUESTIONS = "Maximum questions must be greater than or equal to minimum questions ({min_q})"
     
     QUESTIONS_PER_CHUNK_SET = """✅ Question generation settings updated:
 • Minimum: {min_q} questions
@@ -117,6 +117,47 @@ Use /quiz to start a new quiz!"""
     {question}
 
     Source: {source}"""
+
+    # Edit Question Messages
+    EDIT_QUESTION_START = """📝 Current Question:
+{question}
+
+Would you like to edit the question phrasing?"""
+
+    EDIT_OPTIONS_START = """Current Options:
+{options}
+
+Would you like to edit the option labels?"""
+
+    EDIT_ANSWER_START = """Current correct answer: {current_answer}
+
+Would you like to set a different option as the correct answer?"""
+
+    EDIT_EXPLANATION_START = """Current explanation:
+{explanation}
+
+Would you like to edit the explanation?"""
+
+    ENTER_NEW_QUESTION = "Please enter the new question text:"
+    ENTER_NEW_OPTIONS = """Please enter exactly 4 options, one per line, using the format below:
+Example:
+A - First option
+B - Second option
+C - Third option
+D - Fourth option"""
+    SELECT_NEW_ANSWER = "Select the correct answer:"
+    ENTER_NEW_EXPLANATION = "Please enter the new explanation:"
+
+    INVALID_OPTIONS_FORMAT = """Invalid option format. Please enter exactly 4 options, one per line, starting with A - B - C - D -
+Example:
+A - First option
+B - Second option
+C - Third option
+D - Fourth option"""
+
+    EDIT_COMPLETE = "✅ Question has been updated successfully!"
+    SKIP_EDIT = "Skipping this edit..."
+    INVALID_ANSWER_CHOICE = "Please select a valid answer (A, B, C, or D)"
 
     # Answer Feedback
     CORRECT_ANSWER = "✅ *Correct!*\n\n{explanation}"
@@ -198,29 +239,41 @@ Always respond with valid JSON only, no additional text.
 Keep questions and explanations simple and avoid using special characters, HTML, or Markdown formatting."""
     
     @staticmethod
+    @staticmethod
     def get_generation_prompt(content: str, min_questions: int, max_questions: int, max_length: int = 6000) -> str:
         return f"""Based on the following content, generate between {min_questions} and {max_questions} high-quality multiple-choice questions.
-Choose the number of questions based on:
-- Content complexity and depth
-- Important concepts and key points
-- Natural breaks in the content
-- Meaningful testable information
+    Choose the number of questions based on:
+    - Content complexity and depth
+    - Important concepts and key points
+    - Natural breaks in the content
+    - Meaningful testable information
 
-Each question should:
-- Test deep understanding, not just memorization
-- Have 4 options (A, B, C, D) with one correct answer
-- Include a detailed explanation that quotes specific parts from the content
-- Cover different aspects of the content (avoid redundant questions)
+    Each question should:
+    - Test deep understanding, not just memorization
+    - Have 4 options (A, B, C, D) with one correct answer
+    - Include a detailed explanation that quotes specific parts from the content
+    - Cover different aspects of the content (avoid redundant questions)
+    - Include a few harder reasoning questions in the format:
+    "Which of the following statements are true?"
+    (i) ...
+    (ii) ...
+    (iii) ...
+    (iv) ... (or more if needed)
+    The statements (i), (ii), (iii), (iv), etc. must be included inside the "question" field itself, each on a new line and indented for clarity.
+    Use this exact format inside the question string:
+    "Which of the following statements are true?\\n  (i) Statement one\\n  (ii) Statement two\\n  (iii) Statement three"
+    The options must follow this format:
+    ["A) Only (i)", "B) Only (i) and (ii)", "C) All of the above", "D) None of the above"]
 
-Content:
-{content[:max_length]}
+    Content:
+    {content[:max_length]}
 
-IMPORTANT: Return ONLY valid JSON in this exact format, with no additional text:
-[
-  {{
-    "question": "Question text here?",
-    "options": ["A) Option 1", "B) Option 2", "C) Option 3", "D) Option 4"],
-    "correct_answer": "A",
-    "explanation": "Detailed explanation with quotes from content"
-  }}
-]"""
+    IMPORTANT: Return ONLY valid JSON in this exact format, with no additional text:
+    [
+    {{
+        "question": "Question text here, including any (i), (ii), (iii) statements if applicable",
+        "options": ["A) Option 1", "B) Option 2", "C) Option 3", "D) Option 4"],
+        "correct_answer": "A",
+        "explanation": "Detailed explanation with quotes from content"
+    }}
+    ]"""

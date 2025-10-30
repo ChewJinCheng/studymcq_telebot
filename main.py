@@ -81,7 +81,8 @@ def main():
     
     # Set command_handlers reference in message_handlers (for quiz flow)
     message_handlers.set_command_handlers(command_handlers)
-    
+    message_handlers.set_callback_handlers(callback_handlers)
+
     # Create application
     app = Application.builder().token(config.BOT_TOKEN).build()
     

@@ -13,6 +13,17 @@ class CallbackHandlers:
         self.db = db_queries
         self.quiz_manager = quiz_manager
         self.command_handlers = command_handlers
+        
+    def get_quiz_buttons(self) -> InlineKeyboardMarkup:
+        """Get standard quiz navigation buttons"""
+        keyboard = [
+            [
+                InlineKeyboardButton("Next Question ➡️", callback_data='next_question'),
+                InlineKeyboardButton("✏️ Edit", callback_data='edit_question'),
+                InlineKeyboardButton("🛑 End Quiz", callback_data='end_quiz')
+            ]
+        ]
+        return InlineKeyboardMarkup(keyboard)
     
     async def button_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Main callback handler"""
@@ -38,7 +49,14 @@ class CallbackHandlers:
         elif data == 'next_question':
             # Don't call next_question here - already called in handle_answer/show_solution
             await self.command_handlers.send_question(update, context)
-        
+            
+        elif data == 'edit_question':
+            await self.start_question_edit(update, context)
+            
+        # Edit flow callbacks: includes both `edit_...` and the answer selection `set_answer_X`
+        elif data.startswith('edit_') or data.startswith('set_answer_'):
+            await self.handle_edit_response(update, context)
+            
         elif data == 'set_questions':
             await query.message.reply_text(BotMessages.SET_QUESTIONS_PROMPT)
             context.user_data['awaiting'] = 'questions'
@@ -82,7 +100,9 @@ class CallbackHandlers:
         result = self.quiz_manager.process_answer(user_id, user_answer, context)
         
         if result['is_correct']:
-            # Correct answer - move to next question immediately
+            # Save reference to current question before moving to next
+            current_mcq = self.quiz_manager.get_current_question(context)
+            context.user_data['current_mcq'] = current_mcq
             self.quiz_manager.next_question(context)
             
             # Check if quiz is complete
@@ -102,20 +122,13 @@ class CallbackHandlers:
                 
                 await update.callback_query.message.reply_text(result_text, parse_mode='Markdown')
             else:
-                # More questions remaining - show next question button and end quiz button
-                keyboard = [
-                    [
-                        InlineKeyboardButton("Next Question ➡️", callback_data='next_question'),
-                        InlineKeyboardButton("🛑 End Quiz", callback_data='end_quiz')
-                    ]
-                ]
-                reply_markup = InlineKeyboardMarkup(keyboard)
+                # More questions remaining
                 
                 # Escape special characters for markdown
                 safe_explanation = result['explanation'].replace('_', '\\_').replace('*', '\\*').replace('[', '\\[').replace('`', '\\`')
                 await update.callback_query.message.reply_text(
                     BotMessages.CORRECT_ANSWER.format(explanation=safe_explanation), 
-                    reply_markup=reply_markup,
+                    reply_markup=self.get_quiz_buttons(),
                     parse_mode='Markdown'
                 )
         else:
@@ -151,30 +164,221 @@ class CallbackHandlers:
         
         # Check if quiz is complete
         if self.quiz_manager.is_quiz_complete(context):
-            # Show solution then quiz summary
-            await update.callback_query.message.reply_text(
-                solution_text,
-                parse_mode='Markdown'
-            )
-            
             # Show final quiz results
+            await update.callback_query.message.reply_text(solution_text, parse_mode='Markdown')
+            
             summary = self.quiz_manager.get_quiz_summary(context)
             result_text = BotMessages.QUIZ_COMPLETED.format(**summary)
             self.quiz_manager.end_quiz(context)
             
             await update.callback_query.message.reply_text(result_text, parse_mode='Markdown')
         else:
-            # More questions remaining - show next question button and end quiz button
+            # More questions remaining - show buttons
+            await update.callback_query.message.reply_text(
+                solution_text, 
+                reply_markup=self.get_quiz_buttons(),
+                parse_mode='Markdown'
+            )
+    
+    async def start_question_edit(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Start the question editing process"""
+        # Prefer the saved snapshot of the question the user just answered
+        orig_mcq = context.user_data.get('current_mcq')
+        if not orig_mcq:
+            # Fallback to current question if no saved reference
+            orig_mcq = self.quiz_manager.get_current_question(context)
+
+        # Store a shallow copy/snapshot so we don't mutate the in-memory quiz list
+        mcq = {
+            'id': orig_mcq['id'],
+            'question': orig_mcq['question'],
+            'options': list(orig_mcq.get('options', [])),
+            'correct_answer': orig_mcq.get('correct_answer'),
+            'explanation': orig_mcq.get('explanation'),
+            'source': orig_mcq.get('source')
+        }
+        context.user_data['editing_question'] = mcq
+        context.user_data['editing_question_id'] = mcq['id']
+        
+        keyboard = [
+            [
+                InlineKeyboardButton("Yes", callback_data='edit_question_yes'),
+                InlineKeyboardButton("No", callback_data='edit_question_no')
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.callback_query.message.reply_text(
+            BotMessages.EDIT_QUESTION_START.format(question=mcq['question']),
+            reply_markup=reply_markup
+        )
+        
+    async def handle_edit_response(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle responses during the question editing process"""
+        query = update.callback_query
+        data = query.data
+        mcq = context.user_data.get('editing_question')
+        
+        if not mcq:
+            await query.message.reply_text("Edit session expired. Please try again.")
+            return
+            
+        if data == 'edit_question_yes':
+            await query.message.reply_text(BotMessages.ENTER_NEW_QUESTION)
+            context.user_data['awaiting_edit'] = 'question'
+            
+        elif data == 'edit_question_no':
+            # Move to options edit
             keyboard = [
                 [
-                    InlineKeyboardButton("Next Question ➡️", callback_data='next_question'),
-                    InlineKeyboardButton("🛑 End Quiz", callback_data='end_quiz')
+                    InlineKeyboardButton("Yes", callback_data='edit_options_yes'),
+                    InlineKeyboardButton("No", callback_data='edit_options_no')
                 ]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            await update.callback_query.message.reply_text(
-                solution_text, 
-                reply_markup=reply_markup,
-                parse_mode='Markdown'
+            options_text = "\n".join(mcq['options'])
+            await query.message.reply_text(
+                BotMessages.EDIT_OPTIONS_START.format(options=options_text),
+                reply_markup=reply_markup
             )
+            
+        elif data == 'edit_options_yes':
+            await query.message.reply_text(BotMessages.ENTER_NEW_OPTIONS)
+            context.user_data['awaiting_edit'] = 'options'
+            
+        elif data == 'edit_options_no':
+            # Move to answer edit
+            keyboard = [
+                [
+                    InlineKeyboardButton("Yes", callback_data='edit_answer_yes'),
+                    InlineKeyboardButton("No", callback_data='edit_answer_no')
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await query.message.reply_text(
+                BotMessages.EDIT_ANSWER_START.format(current_answer=mcq['correct_answer']),
+                reply_markup=reply_markup
+            )
+            
+        elif data == 'edit_answer_yes':
+            keyboard = [
+                [InlineKeyboardButton(opt[0], callback_data=f"set_answer_{opt[0]}") 
+                 for opt in mcq['options']]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.message.reply_text(
+                BotMessages.SELECT_NEW_ANSWER,
+                reply_markup=reply_markup
+            )
+            
+        elif data == 'edit_answer_no':
+            # Move to explanation edit
+            keyboard = [
+                [
+                    InlineKeyboardButton("Yes", callback_data='edit_explanation_yes'),
+                    InlineKeyboardButton("No", callback_data='edit_explanation_no')
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await query.message.reply_text(
+                BotMessages.EDIT_EXPLANATION_START.format(explanation=mcq['explanation']),
+                reply_markup=reply_markup
+            )
+            
+        elif data == 'edit_explanation_yes':
+            await query.message.reply_text(BotMessages.ENTER_NEW_EXPLANATION)
+            context.user_data['awaiting_edit'] = 'explanation'
+            
+        elif data == 'edit_explanation_no':
+            # Complete the editing process
+            await self.save_question_edits(update, context)
+            
+        elif data.startswith('set_answer_'):
+            new_answer = data.split('_')[2]
+            # Store in new_correct_answer, not the original correct_answer
+            context.user_data['editing_question']['new_correct_answer'] = new_answer
+
+            # Move to explanation edit
+            keyboard = [
+                [
+                    InlineKeyboardButton("Yes", callback_data='edit_explanation_yes'),
+                    InlineKeyboardButton("No", callback_data='edit_explanation_no')
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            await query.message.reply_text(
+                BotMessages.EDIT_EXPLANATION_START.format(explanation=mcq['explanation']),
+                reply_markup=reply_markup
+            )
+
+    async def save_question_edits(self, update: Update, context: ContextTypes.DEFAULT_TYPE, from_text: bool = False):
+        """Save all accumulated question edits
+
+        This updates the DB and then updates the in-memory copy of the quiz
+        (context.user_data['current_quiz']) by matching question id so the
+        displayed quiz items remain consistent.
+        """
+        mcq = context.user_data.get('editing_question')
+        if mcq:
+            user_id = update.effective_user.id
+            # Prepare values to update (only include if provided)
+            new_q = mcq.get('new_question')
+            new_opts = mcq.get('new_options')
+            new_correct = mcq.get('new_correct_answer')
+            new_expl = mcq.get('new_explanation')
+
+            success = self.db.update_question(
+                mcq['id'],
+                user_id,
+                question=new_q,
+                options=new_opts,
+                correct_answer=new_correct,
+                explanation=new_expl
+            )
+
+            if success:
+                # Update any in-memory quiz list entries that match this id
+                quiz = context.user_data.get('current_quiz', [])
+                for i, q in enumerate(quiz):
+                    try:
+                        if q.get('id') == mcq['id']:
+                            # replace only provided fields
+                            if new_q is not None:
+                                q['question'] = new_q
+                            if new_opts is not None:
+                                q['options'] = new_opts
+                            if new_correct is not None:
+                                q['correct_answer'] = new_correct
+                            if new_expl is not None:
+                                q['explanation'] = new_expl
+                            # write back
+                            quiz[i] = q
+                    except Exception:
+                        # be defensive; continue on error
+                        continue
+
+                # Reply to user
+                if from_text or not update.callback_query:
+                    await update.message.reply_text(
+                        BotMessages.EDIT_COMPLETE,
+                        reply_markup=self.get_quiz_buttons()
+                    )
+                else:
+                    await update.callback_query.message.reply_text(
+                        BotMessages.EDIT_COMPLETE,
+                        reply_markup=self.get_quiz_buttons()
+                    )
+            else:
+                if from_text or not update.callback_query:
+                    await update.message.reply_text("Failed to update question. Please try again.")
+                else:
+                    await update.callback_query.message.reply_text("Failed to update question. Please try again.")
+
+        # Clear editing state
+        context.user_data.pop('editing_question', None)
+        context.user_data.pop('awaiting_edit', None)
+        context.user_data.pop('editing_question_id', None)
