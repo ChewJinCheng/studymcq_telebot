@@ -272,6 +272,10 @@ Keep questions and explanations simple and avoid using special characters, HTML,
     The options must follow this format:
     ["A) Only (i)", "B) Only (i) and (ii)", "C) All of the above", "D) None of the above"]
 
+    - All options must be logically distinct and non-redundant.
+    - Do not repeat the same option text under different labels (e.g., avoid both "A) Only (i)" and "D) Only (i)").
+    - Each option must represent a unique combination or interpretation of the statements (if relevant).
+
     Content:
     {content[:max_length]}
 

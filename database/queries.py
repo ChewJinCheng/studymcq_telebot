@@ -1,6 +1,7 @@
 import json
 from typing import Dict, List, Optional
 import sqlite3
+import random
 import config
 
 class DatabaseQueries:
@@ -123,34 +124,76 @@ class DatabaseQueries:
         conn = self._get_connection()
         c = conn.cursor()
         c.execute('''INSERT INTO question_bank 
-                     (user_id, question, options, correct_answer, explanation, source) 
-                     VALUES (?, ?, ?, ?, ?, ?)''',
-                  (user_id, question, json.dumps(options), correct_answer, explanation, source))
+                     (user_id, question, options, correct_answer, explanation, source, accuracy) 
+                     VALUES (?, ?, ?, ?, ?, ?, ?)''',
+                  (user_id, question, json.dumps(options), correct_answer, explanation, source, 0.0))
         conn.commit()
         conn.close()
     
     def get_random_questions(self, user_id: int, num_questions: int) -> List[Dict]:
-        """Get random questions from question bank"""
+        """Get random questions from question bank with weighted selection based on accuracy
+        
+        Lower accuracy questions appear more frequently to help user improve weak areas.
+        Weight formula:
+        - Never attempted (times_asked = 0): weight = 0.6 (neutral)
+        - Low accuracy: weight = 1.0 - accuracy + 0.2 (ranges from 0.2 to 1.2)
+        - This gives lower accuracy questions higher probability of selection
+        """
         conn = self._get_connection()
         c = conn.cursor()
-        c.execute('''SELECT id, question, options, correct_answer, explanation, source 
-                     FROM question_bank WHERE user_id = ? 
-                     ORDER BY RANDOM() LIMIT ?''', 
-                  (user_id, num_questions))
-        results = c.fetchall()
+        
+        # Get all questions with their accuracy
+        c.execute('''SELECT id, question, options, correct_answer, explanation, source, 
+                     times_asked, accuracy
+                     FROM question_bank WHERE user_id = ?''', 
+                  (user_id,))
+        all_questions = c.fetchall()
         conn.close()
         
-        questions = []
-        for row in results:
-            questions.append({
-                'id': row[0],
-                'question': row[1],
-                'options': json.loads(row[2]),
-                'correct_answer': row[3],
-                'explanation': row[4],
-                'source': row[5]
+        if not all_questions:
+            return []
+        
+        # Calculate weights for each question
+        questions_with_weights = []
+        for row in all_questions:
+            question_id, question, options, correct_answer, explanation, source, times_asked, accuracy = row
+            
+            # Calculate weight
+            if times_asked == 0:
+                # Never attempted - neutral weight
+                weight = 0.6
+            else:
+                # Inverse accuracy weighting: lower accuracy = higher weight
+                # Weight ranges from 0.2 (high accuracy) to 1.2 (low accuracy)
+                weight = 1.0 - accuracy + 0.2
+            
+            questions_with_weights.append({
+                'id': question_id,
+                'question': question,
+                'options': json.loads(options),
+                'correct_answer': correct_answer,
+                'explanation': explanation,
+                'source': source,
+                'weight': weight
             })
-        return questions
+        
+        # If we have fewer questions than requested, return all
+        if len(questions_with_weights) <= num_questions:
+            return [q for q in questions_with_weights]
+        
+        # Weighted random selection without replacement
+        weights = [q['weight'] for q in questions_with_weights]
+        selected_questions = random.choices(
+            questions_with_weights, 
+            weights=weights, 
+            k=min(num_questions, len(questions_with_weights))
+        )
+        
+        # Remove weight field before returning
+        for q in selected_questions:
+            q.pop('weight', None)
+        
+        return selected_questions
     
     def get_question_count(self, user_id: int) -> int:
         """Get total question count for user"""
@@ -170,17 +213,22 @@ class DatabaseQueries:
         conn.close()
     
     def update_question_stats(self, question_id: int, is_correct: bool):
-        """Update question statistics"""
+        """Update question statistics and recalculate accuracy"""
         conn = self._get_connection()
         c = conn.cursor()
+        
         if is_correct:
             c.execute('''UPDATE question_bank 
-                         SET times_asked = times_asked + 1, times_correct = times_correct + 1 
+                         SET times_asked = times_asked + 1, 
+                             times_correct = times_correct + 1,
+                             accuracy = CAST(times_correct + 1 AS REAL) / (times_asked + 1)
                          WHERE id = ?''', (question_id,))
         else:
             c.execute('''UPDATE question_bank 
-                         SET times_asked = times_asked + 1 
+                         SET times_asked = times_asked + 1,
+                             accuracy = CAST(times_correct AS REAL) / (times_asked + 1)
                          WHERE id = ?''', (question_id,))
+        
         conn.commit()
         conn.close()
     
@@ -236,7 +284,7 @@ class DatabaseQueries:
     def update_question(self, question_id: int, user_id: int, 
                    question: str = None, options: List[str] = None,
                    correct_answer: str = None, explanation: str = None) -> bool:
-        """Update a question in the question bank"""
+        """Update a question in the question bank and reset accuracy to 0"""
         conn = self._get_connection()
         c = conn.cursor()
         
@@ -262,6 +310,14 @@ class DatabaseQueries:
         if explanation is not None:
             updates.append('explanation = ?')
             params.append(explanation)
+        
+        # Always reset accuracy when editing
+        updates.append('accuracy = ?')
+        params.append(0.0)
+        updates.append('times_asked = ?')
+        params.append(0)
+        updates.append('times_correct = ?')
+        params.append(0)
             
         if updates:
             query = f'''UPDATE question_bank 
@@ -280,6 +336,7 @@ class DatabaseQueries:
                 print(f"✓ Question {question_id} updated successfully:")
                 print(f"  Question: {result[0][:50]}...")
                 print(f"  Answer: {result[2]}")
+                print(f"  Accuracy reset to 0.0")
             
         conn.close()
         return True
