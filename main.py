@@ -96,6 +96,7 @@ def main():
     app.add_handler(CommandHandler('bank', command_handlers.bank_command))
     app.add_handler(CommandHandler('clear_knowledge', command_handlers.clear_knowledge_command))
     app.add_handler(CommandHandler('clear_questions', command_handlers.clear_questions_command))
+    app.add_handler(CommandHandler("custom_qn", command_handlers.custom_qn_command))
     
     # Register message handlers (only when in upload mode or awaiting input)
     app.add_handler(MessageHandler(filters.Document.ALL, message_handlers.handle_document))

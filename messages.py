@@ -15,6 +15,7 @@ I help you master your study materials through daily MCQ quizzes.
 *Commands:*
 /start - Instruction Manual
 /upload - How to upload study materials
+/custom\\_qn - Create a custom question
 /quiz - Start a quiz with random questions
 /settings - Configure daily questions & time
 /stats - View your progress
@@ -140,11 +141,13 @@ Would you like to edit the explanation?"""
 
     ENTER_NEW_QUESTION = "Please enter the new question text:"
     ENTER_NEW_OPTIONS = """Please enter exactly 4 options, one per line, using the format below:
-Example:
-A - First option
-B - Second option
-C - Third option
-D - Fourth option"""
+"*Format examples:*\n"
+"```\n"
+"A - First option\n"
+"B - Second option\n"
+"C - Third option\n"
+"D - Fourth option\n"
+"```\n"""
     SELECT_NEW_ANSWER = "Select the correct answer:"
     ENTER_NEW_EXPLANATION = "Please enter the new explanation:"
 
@@ -158,6 +161,10 @@ D - Fourth option"""
     EDIT_COMPLETE = "✅ Question has been updated successfully!"
     SKIP_EDIT = "Skipping this edit..."
     INVALID_ANSWER_CHOICE = "Please select a valid answer (A, B, C, or D)"
+
+    # Delete question
+    CONFIRM_DELETE_QUESTION = "⚠️ *Delete Question*\n\nThis will permanently remove this question from your bank. Are you sure?"
+    QUESTION_DELETED = "✅ Question deleted."
 
     # Answer Feedback
     CORRECT_ANSWER = "✅ *Correct!*\n\n{explanation}"
@@ -277,3 +284,5 @@ Keep questions and explanations simple and avoid using special characters, HTML,
         "explanation": "Detailed explanation with quotes from content"
     }}
     ]"""
+
+CUSTOM_QN_START = "📝 *Create Your Own Question*\n\nLet's create a custom MCQ question!\n\nPlease enter your question:"

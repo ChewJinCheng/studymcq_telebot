@@ -283,3 +283,18 @@ class DatabaseQueries:
             
         conn.close()
         return True
+
+    def delete_question(self, question_id: int, user_id: int) -> bool:
+        """Delete a single question belonging to a user"""
+        conn = self._get_connection()
+        c = conn.cursor()
+        # Verify ownership
+        c.execute('SELECT id FROM question_bank WHERE id = ? AND user_id = ?', (question_id, user_id))
+        if not c.fetchone():
+            conn.close()
+            return False
+
+        c.execute('DELETE FROM question_bank WHERE id = ? AND user_id = ?', (question_id, user_id))
+        conn.commit()
+        conn.close()
+        return True

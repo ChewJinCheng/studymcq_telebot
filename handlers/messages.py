@@ -8,6 +8,7 @@ from utils.text_chunking import chunk_text
 from messages import BotMessages
 from utils.logger import setup_logger
 import config
+import re
 
 logger = setup_logger(__name__)
 
@@ -34,6 +35,40 @@ class MessageHandlers:
     def set_callback_handlers(self, callback_handlers):
         """Set callback handlers reference (to avoid circular dependency)"""
         self.callback_handlers = callback_handlers
+
+    def _parse_options(self, text: str):
+        """Parse and normalize 4 option lines into standardized list and mapping.
+
+        Accepts lines like "A) text", "B - text", "C. text", "D: text" or
+        "A)text". Requires exactly A,B,C,D each appearing once and anchored at
+        the start of the line. Returns (options_list, label_map) where
+        options_list is ["A) text", "B) text", ...] and label_map maps
+        'A'->'text'. Raises ValueError on invalid input.
+        """
+        lines = [l.strip() for l in text.strip().splitlines() if l.strip()]
+        if len(lines) != 4:
+            raise ValueError("Invalid number of option lines; expected 4.")
+
+        expected = ['A', 'B', 'C', 'D']
+        parsed = {}
+
+        for line in lines:
+            m = re.match(r"^\s*([A-Da-d])\s*[)\-\.:]?\s*(.+)$", line)
+            if not m:
+                raise ValueError(f"Invalid option line: '{line}'")
+            label = m.group(1).upper()
+            if label in parsed:
+                raise ValueError(f"Duplicate label: {label}")
+            opt_text = m.group(2).strip()
+            if not opt_text:
+                raise ValueError(f"Empty option text for label {label}")
+            parsed[label] = opt_text
+
+        if set(parsed.keys()) != set(expected):
+            raise ValueError("Missing or extra labels; expected A,B,C,D")
+
+        options_list = [f"{lbl}) {parsed[lbl]}" for lbl in expected]
+        return options_list, parsed
     
     async def handle_document(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle document uploads"""
@@ -116,6 +151,11 @@ class MessageHandlers:
         # Check if we're awaiting quiz count input
         if context.user_data.get('awaiting_quiz_count'):
             await self.handle_quiz_count_input(update, context, text, user_id)
+            return
+        
+        # Check if we're creating a custom question
+        if context.user_data.get('creating_custom_question'):
+            await self.handle_custom_question_input(update, context, text, user_id)
             return
         
         # Check if we're awaiting settings input
@@ -311,70 +351,14 @@ class MessageHandlers:
             )
             
         elif edit_type == 'options':
-            # Validate options format
-            lines = text.strip().split('\n')
-            if len(lines) != 4:
+            # Use the shared parser to validate and normalize options
+            try:
+                options_list, _label_map = self._parse_options(text)
+            except ValueError:
                 await update.message.reply_text(BotMessages.INVALID_OPTIONS_FORMAT)
                 return
-            
-            cleaned_options = []
-            expected_labels = ['A', 'B', 'C', 'D']
-            found_labels = []
 
-            for line in lines:
-                line = line.strip()
-                if not line:
-                    await update.message.reply_text(BotMessages.INVALID_OPTIONS_FORMAT)
-                    return
-                
-                # Find A, B, C, or D (case-insensitive) in the line
-                label_found = None
-                label_pos = -1
-                
-                for label in expected_labels:
-                    # Search for the label (case-insensitive)
-                    pos = line.upper().find(label)
-                    if pos != -1:
-                        label_found = label
-                        label_pos = pos
-                        break
-                
-                if not label_found:
-                    await update.message.reply_text(BotMessages.INVALID_OPTIONS_FORMAT)
-                    return
-                
-                # Check for duplicate labels
-                if label_found in found_labels:
-                    await update.message.reply_text(BotMessages.INVALID_OPTIONS_FORMAT)
-                    return
-                
-                found_labels.append(label_found)
-                
-                # Extract the text after the label and any separator
-                # Start from position after the label
-                text_after_label = line[label_pos + 1:].strip()
-                
-                # Remove common separators at the start if present
-                if text_after_label and text_after_label[0] in (')', '-', '.', ':', ']', ','):
-                    text_after_label = text_after_label[1:].strip()
-                
-                if not text_after_label:
-                    await update.message.reply_text(BotMessages.INVALID_OPTIONS_FORMAT)
-                    return
-                
-                # Store in standardized A) format with the label
-                cleaned_options.append((label_found, f"{label_found}) {text_after_label}"))
-            
-            # Verify all labels A, B, C, D were found
-            if sorted(found_labels) != expected_labels:
-                await update.message.reply_text(BotMessages.INVALID_OPTIONS_FORMAT)
-                return
-            
-            # Sort options to ensure A, B, C, D order
-            cleaned_options.sort(key=lambda x: x[0])
-            cleaned_options = [opt[1] for opt in cleaned_options]
-            
-            mcq['new_options'] = cleaned_options
+            mcq['new_options'] = options_list
             # Move to answer edit
             keyboard = [
                 [
@@ -406,6 +390,96 @@ class MessageHandlers:
                     await update.message.reply_text("Failed to save edits: handler not available.")
             
         context.user_data.pop('awaiting_edit', None)
+
+    async def handle_custom_question_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE,
+                                      text: str, user_id: int):
+        """Handle input for custom question creation"""
+        step = context.user_data.get('custom_question_step')
+        custom_qn = context.user_data.get('custom_qn_data', {})
+        
+        if step == 'question':
+            # Save question text
+            custom_qn['question'] = text.strip()
+            context.user_data['custom_qn_data'] = custom_qn
+            
+            await update.message.reply_text(
+                "✅ Question saved!\n\n"
+                "Now, please enter 4 options (one per line).\n\n"
+                "*Format examples:*\n"
+                "```\n"
+                "A - First option\n"
+                "B - Second option\n"
+                "C - Third option\n"
+                "D - Fourth option\n"
+                "```\n"
+                "Or use A-, A., etc.",
+                parse_mode='Markdown'
+            )
+            context.user_data['custom_question_step'] = 'options'
+            
+        elif step == 'options':
+            # Use shared parser to validate and normalize options
+            try:
+                options_list, _label_map = self._parse_options(text)
+            except ValueError:
+                await update.message.reply_text(BotMessages.INVALID_OPTIONS_FORMAT)
+                return
+
+            custom_qn['options'] = options_list
+            context.user_data['custom_qn_data'] = custom_qn
+            
+            # Ask for correct answer
+            from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+            keyboard = [
+                [InlineKeyboardButton(label, callback_data=f"custom_answer_{label}") 
+                for label in ['A', 'B', 'C', 'D']]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            options_display = "\n".join(custom_qn['options'])
+            await update.message.reply_text(
+                f"✅ Options saved!\n\n{options_display}\n\n"
+                "Now, select the correct answer:",
+                reply_markup=reply_markup
+            )
+            context.user_data['custom_question_step'] = 'answer'
+            
+        elif step == 'explanation':
+            # Save explanation and complete
+            custom_qn['explanation'] = text.strip()
+            context.user_data['custom_qn_data'] = custom_qn
+            
+            # Save to database
+            self.db.save_question(
+                user_id,
+                custom_qn['question'],
+                custom_qn['options'],
+                custom_qn['correct_answer'],
+                custom_qn['explanation'],
+                "Custom Question"
+            )
+            
+            # Display the saved correct answer with its full option text
+            correct_label = custom_qn.get('correct_answer')
+            correct_display = correct_label
+            if correct_label and custom_qn.get('options'):
+                for opt in custom_qn['options']:
+                    if opt.startswith(f"{correct_label})"):
+                        correct_display = opt
+                        break
+
+            await update.message.reply_text(
+                "✅ *Custom Question Created Successfully!*\n\n"
+                f"📊 Question: {custom_qn['question']}\n"
+                f"✓ Correct Answer: {correct_display}\n\n"
+                "Your question has been added to your question bank!",
+                parse_mode='Markdown'
+            )
+            
+            # Clear custom question state
+            context.user_data.pop('creating_custom_question', None)
+            context.user_data.pop('custom_question_step', None)
+            context.user_data.pop('custom_qn_data', None)
     
     async def process_and_generate_questions(self, user_id: int, content: str, 
                                             source: str, update: Update, 

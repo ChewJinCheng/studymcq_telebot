@@ -113,6 +113,15 @@ StudyMCQ uses a smart pipeline to convert your study materials into multiple-cho
   - Correct the answer or explanation
 - This ensures your question bank remains accurate and trustworthy.
 
+### 3. 🗑️ Delete Questions
+- You can delete any question from your personal bank if it's irrelevant, incorrect, or no longer needed.
+- This helps you keep your quiz pool clean and focused.
+
+### 4. 🧾 Create Custom Questions
+- You can manually add your own MCQs to the question bank.
+- Useful for inserting instructor-provided questions, textbook examples, or your own practice items.
+- Custom questions follow the same format: 4 options, one correct answer, and an explanation.
+
 ---
 
 ## 📦 File Structure

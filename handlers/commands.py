@@ -219,3 +219,14 @@ class CommandHandlers:
                 await update.callback_query.message.reply_text(error_msg)
             else:
                 await update.message.reply_text(error_msg)
+    
+    async def custom_qn_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /custom_qn command - allow users to create custom questions"""
+        await update.message.reply_text(
+            "📝 *Create Your Own Question*\n\n"
+            "Let's create a custom MCQ question!\n\n"
+            "Please enter your question:",
+            parse_mode='Markdown'
+        )
+        context.user_data['creating_custom_question'] = True
+        context.user_data['custom_question_step'] = 'question'

@@ -24,6 +24,16 @@ class CallbackHandlers:
             ]
         ]
         return InlineKeyboardMarkup(keyboard)
+
+    def get_final_buttons(self) -> InlineKeyboardMarkup:
+        """Get buttons for final-question state (allow edit or finish)"""
+        keyboard = [
+            [
+                InlineKeyboardButton("✏️ Edit", callback_data='edit_question'),
+                InlineKeyboardButton("🛑 End Quiz", callback_data='end_quiz')
+            ]
+        ]
+        return InlineKeyboardMarkup(keyboard)
     
     async def button_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Main callback handler"""
@@ -83,6 +93,20 @@ class CallbackHandlers:
             # Edit the existing message instead of creating a new one
             await query.edit_message_text(BotMessages.QUESTIONS_CLEARED)
         
+        elif data.startswith('custom_answer_'):
+            # Handle custom question answer selection
+            answer = data.split('_')[2]
+            custom_qn = context.user_data.get('custom_qn_data', {})
+            custom_qn['correct_answer'] = answer
+            context.user_data['custom_qn_data'] = custom_qn
+            
+            await query.message.reply_text(
+                f"✅ Correct answer set to: *{answer}*\n\n"
+                "Finally, please provide an explanation for the correct answer:",
+                parse_mode='Markdown'
+            )
+            context.user_data['custom_question_step'] = 'explanation'
+                
         elif data == 'end_quiz':
             # User wants to end quiz early
             progress = self.quiz_manager.get_quiz_progress(context)
@@ -110,17 +134,12 @@ class CallbackHandlers:
                 # Show explanation then quiz summary
                 # Escape special characters for markdown
                 safe_explanation = result['explanation'].replace('_', '\\_').replace('*', '\\*').replace('[', '\\[').replace('`', '\\`')
+                # Show explanation and allow editing or finishing the quiz
                 await update.callback_query.message.reply_text(
                     BotMessages.CORRECT_ANSWER.format(explanation=safe_explanation),
+                    reply_markup=self.get_final_buttons(),
                     parse_mode='Markdown'
                 )
-                
-                # Show final quiz results
-                summary = self.quiz_manager.get_quiz_summary(context)
-                result_text = BotMessages.QUIZ_COMPLETED.format(**summary)
-                self.quiz_manager.end_quiz(context)
-                
-                await update.callback_query.message.reply_text(result_text, parse_mode='Markdown')
             else:
                 # More questions remaining
                 
@@ -150,6 +169,8 @@ class CallbackHandlers:
     async def show_solution(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show solution for current question"""
         mcq = self.quiz_manager.get_current_question(context)
+        # Save snapshot of this question so edits refer to the question the user just saw
+        context.user_data['current_mcq'] = mcq
         
         # Escape special characters in explanation for markdown
         safe_explanation = mcq['explanation'].replace('_', '\\_').replace('*', '\\*').replace('[', '\\[').replace('`', '\\`')
@@ -161,21 +182,21 @@ class CallbackHandlers:
         
         # Move to next question
         self.quiz_manager.next_question(context)
-        
+
         # Check if quiz is complete
         if self.quiz_manager.is_quiz_complete(context):
             # Show final quiz results
             await update.callback_query.message.reply_text(solution_text, parse_mode='Markdown')
-            
+
             summary = self.quiz_manager.get_quiz_summary(context)
             result_text = BotMessages.QUIZ_COMPLETED.format(**summary)
             self.quiz_manager.end_quiz(context)
-            
+
             await update.callback_query.message.reply_text(result_text, parse_mode='Markdown')
         else:
             # More questions remaining - show buttons
             await update.callback_query.message.reply_text(
-                solution_text, 
+                solution_text,
                 reply_markup=self.get_quiz_buttons(),
                 parse_mode='Markdown'
             )
@@ -202,8 +223,9 @@ class CallbackHandlers:
         
         keyboard = [
             [
-                InlineKeyboardButton("Yes", callback_data='edit_question_yes'),
-                InlineKeyboardButton("No", callback_data='edit_question_no')
+                InlineKeyboardButton("✏️ Edit", callback_data='edit_question_yes'),
+                InlineKeyboardButton("🗑️ Delete", callback_data='edit_delete'),
+                InlineKeyboardButton("❌ Cancel", callback_data='edit_question_no')
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -242,6 +264,51 @@ class CallbackHandlers:
                 BotMessages.EDIT_OPTIONS_START.format(options=options_text),
                 reply_markup=reply_markup
             )
+        
+        elif data == 'edit_delete':
+            # Confirm deletion
+            keyboard = [
+                [
+                    InlineKeyboardButton("✅ Delete", callback_data='edit_delete_confirm'),
+                    InlineKeyboardButton("❌ Cancel", callback_data='edit_delete_cancel')
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.message.reply_text(BotMessages.CONFIRM_DELETE_QUESTION, reply_markup=reply_markup, parse_mode='Markdown')
+
+        elif data == 'edit_delete_cancel':
+            await query.message.reply_text(BotMessages.SKIP_EDIT)
+
+        elif data == 'edit_delete_confirm':
+            # Perform deletion
+            user_id = update.effective_user.id
+            question_id = mcq.get('id')
+            success = self.db.delete_question(question_id, user_id)
+            if success:
+                # Remove from in-memory quiz list if present
+                quiz = context.user_data.get('current_quiz', [])
+                curr_idx = context.user_data.get('current_question', 0)
+                removed_index = None
+                for i, q in enumerate(quiz):
+                    if q.get('id') == question_id:
+                        removed_index = i
+                        quiz.pop(i)
+                        break
+                # Adjust current_question index if necessary
+                if removed_index is not None and removed_index <= curr_idx and curr_idx > 0:
+                    context.user_data['current_question'] = curr_idx - 1
+
+                await query.message.reply_text(BotMessages.QUESTION_DELETED)
+            else:
+                await query.message.reply_text("Failed to delete question. You may not own this question.")
+            # Clear editing state
+            context.user_data.pop('editing_question', None)
+            context.user_data.pop('awaiting_edit', None)
+            context.user_data.pop('editing_question_id', None)
+
+            # After deletion, immediately go to the next question
+            if self.command_handlers:
+                await self.command_handlers.send_question(update, context)
             
         elif data == 'edit_options_yes':
             await query.message.reply_text(BotMessages.ENTER_NEW_OPTIONS)
@@ -364,14 +431,16 @@ class CallbackHandlers:
                 # Reply to user
                 if from_text or not update.callback_query:
                     await update.message.reply_text(
-                        BotMessages.EDIT_COMPLETE,
-                        reply_markup=self.get_quiz_buttons()
+                        BotMessages.EDIT_COMPLETE
                     )
                 else:
                     await update.callback_query.message.reply_text(
-                        BotMessages.EDIT_COMPLETE,
-                        reply_markup=self.get_quiz_buttons()
+                        BotMessages.EDIT_COMPLETE
                     )
+
+                # After successful edit, immediately send the next question
+                if self.command_handlers:
+                    await self.command_handlers.send_question(update, context)
             else:
                 if from_text or not update.callback_query:
                     await update.message.reply_text("Failed to update question. Please try again.")
