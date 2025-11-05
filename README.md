@@ -127,7 +127,7 @@ StudyMCQ uses a smart pipeline to convert your study materials into multiple-cho
 ## 📦 File Structure
 
 ```
-📁 cactusbot/
+📁 studymcq_bot/
 ├── main.py                 # Entry point
 ├── services/
 │   ├── mcq_generator.py    # LLM-based MCQ generation
