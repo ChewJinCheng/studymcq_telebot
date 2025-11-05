@@ -111,14 +111,6 @@ def main():
     # Register error handler
     app.add_error_handler(error_handler)
     
-    # Add daily quiz job (example: runs every day at a specific time)
-    # Note: This is a simplified example. Real implementation would check user timezones
-    # job_queue = app.job_queue
-    # job_queue.run_daily(
-    #     lambda ctx: send_daily_quiz(ctx, db_queries), 
-    #     time=time(hour=9, minute=0)
-    # )
-    
     # Start bot
     logger.info("Bot starting...")
     app.run_polling(allowed_updates=Update.ALL_TYPES)

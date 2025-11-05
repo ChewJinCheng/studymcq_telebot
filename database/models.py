@@ -27,7 +27,6 @@ class Database:
                     timezone TEXT DEFAULT 'UTC')''')
         
         # Add new columns if they don't exist
-        # SQLite doesn't support ADD COLUMN IF NOT EXISTS, so we need to check
         c.execute("PRAGMA table_info(users)")
         columns = [column[1] for column in c.fetchall()]
         

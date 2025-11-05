@@ -33,7 +33,6 @@ class DatabaseQueries:
                     'max_questions_per_chunk': result[3] if result[3] is not None else config.MAX_QUESTIONS_PER_CHUNK
                 }
         except sqlite3.OperationalError:
-            # If columns don't exist yet, get basic settings
             c.execute('SELECT daily_questions, quiz_time FROM users WHERE user_id = ?', (user_id,))
             result = c.fetchone()
             
@@ -110,7 +109,6 @@ class DatabaseQueries:
             """Clean text before storing in database"""
             if not isinstance(text, str):
                 text = str(text)
-            # Remove problematic characters and normalize whitespace
             text = text.replace('\n', ' ')
             text = ' '.join(text.split())
             return text.strip()
@@ -177,7 +175,7 @@ class DatabaseQueries:
                 'weight': weight
             })
         
-        # If we have fewer questions than requested, return all
+        # If have fewer questions than requested, return all
         if len(questions_with_weights) <= num_questions:
             return [q for q in questions_with_weights]
         
