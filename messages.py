@@ -255,6 +255,8 @@ Keep questions and explanations simple and avoid using special characters, HTML,
     - Natural breaks in the content
     - Meaningful testable information
 
+    You may incorporate additional relevant information from the web **only if it directly supports or extends the concepts in the content**. If you do, you **must cite the source clearly** in the "explanation" field using plain text (e.g., "According to [source name], ..."). Do not use external information that contradicts or distracts from the original material.
+
     Each question should:
     - Test deep understanding, not just memorization
     - Have 4 options (A, B, C, D) with one correct answer
