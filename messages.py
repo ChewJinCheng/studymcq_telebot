@@ -140,17 +140,8 @@ Would you like to set a different option as the correct answer?"""
 Would you like to edit the explanation?"""
 
     ENTER_NEW_QUESTION = "Please enter the new question text:"
-    ENTER_NEW_OPTIONS = """Please enter exactly 4 options, one per line, using the format below:
-"*Format examples:*\n"
-"```\n"
-"A - First option\n"
-"B - Second option\n"
-"C - Third option\n"
-"D - Fourth option\n"
-"```\n"""
     SELECT_NEW_ANSWER = "Select the correct answer:"
     ENTER_NEW_EXPLANATION = "Please enter the new explanation:"
-
     INVALID_OPTIONS_FORMAT = """Invalid option format. Please enter exactly 4 options, one per line, starting with A - B - C - D -
 Example:
 A - First option

@@ -406,7 +406,7 @@ class MessageHandlers:
                 "✅ Question saved!\n\n"
                 "Now, please enter 4 options (one per line).\n\n"
                 "*Format examples:*\n"
-                "```\n"
+                "```"
                 "A - First option\n"
                 "B - Second option\n"
                 "C - Third option\n"

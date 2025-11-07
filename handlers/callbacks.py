@@ -20,6 +20,7 @@ class CallbackHandlers:
             [
                 InlineKeyboardButton("Next Question ➡️", callback_data='next_question'),
                 InlineKeyboardButton("✏️ Edit", callback_data='edit_question'),
+                InlineKeyboardButton("🗑️ Delete", callback_data='edit_delete'),
                 InlineKeyboardButton("🛑 End Quiz", callback_data='end_quiz')
             ]
         ]
@@ -30,6 +31,7 @@ class CallbackHandlers:
         keyboard = [
             [
                 InlineKeyboardButton("✏️ Edit", callback_data='edit_question'),
+                InlineKeyboardButton("🗑️ Delete", callback_data='edit_delete'),
                 InlineKeyboardButton("🛑 End Quiz", callback_data='end_quiz')
             ]
         ]
@@ -223,9 +225,8 @@ class CallbackHandlers:
         
         keyboard = [
             [
-                InlineKeyboardButton("✏️ Edit", callback_data='edit_question_yes'),
-                InlineKeyboardButton("🗑️ Delete", callback_data='edit_delete'),
-                InlineKeyboardButton("❌ Cancel", callback_data='edit_question_no')
+                InlineKeyboardButton("Yes", callback_data='edit_question_yes'),
+                InlineKeyboardButton("No", callback_data='edit_question_no')
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -311,7 +312,27 @@ class CallbackHandlers:
                 await self.command_handlers.send_question(update, context)
             
         elif data == 'edit_options_yes':
-            await query.message.reply_text(BotMessages.ENTER_NEW_OPTIONS)
+            current_options = mcq['options']
+                
+            # Reformat options to ensure they use " - " format
+            formatted_options = []
+            for opt in current_options:
+                # Extract the letter (first character) and the rest of the text
+                letter = opt[0]
+                # Remove common separators and get the actual option text
+                text = opt[1:].lstrip(' -).(').strip()
+                formatted_options.append(f"{letter} - {text}")
+            
+            options_example = "\n".join(formatted_options)
+            
+            await query.message.reply_text(
+                f"✅ Question saved!\n\n"
+                f"*Current options:*\n"
+                f"```\n{options_example}\n```\n\n"
+                f"Now, please enter 4 new options (one per line).\n\n"
+                f"*Format: Use A - , B - , C - , D - (with space, dash, space)*",
+                parse_mode='Markdown'
+            )
             context.user_data['awaiting_edit'] = 'options'
             
         elif data == 'edit_options_no':
